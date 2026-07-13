@@ -15,7 +15,6 @@ public class SystemTools {
     @Tool(name = "getHardwareStatus", description = "Get the hardware status information")
     public HardwareStatus getHardwareStatus() {
         double cpuTemperature = hal.getSensors().getCpuTemperature();
-        int[] fanSpeeds = hal.getSensors().getFanSpeeds();
-        return new HardwareStatus(cpuTemperature, fanSpeeds);
+        return new HardwareStatus(cpuTemperature);
     }
 }
