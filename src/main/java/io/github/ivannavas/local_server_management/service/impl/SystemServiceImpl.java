@@ -26,7 +26,7 @@ import java.util.List;
 @Slf4j
 public class SystemServiceImpl implements SystemService {
 
-    private static final double BASE_THRESHOLD = 60.0;
+    private static final double BASE_THRESHOLD = 50.0;
     private static final double THRESHOLD_STEP = 10.0;
 
     private static final BigDecimal AGGREGATION_TOLERANCE = BigDecimal.valueOf(3.0);
