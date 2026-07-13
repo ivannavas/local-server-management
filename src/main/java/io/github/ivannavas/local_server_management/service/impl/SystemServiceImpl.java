@@ -6,19 +6,30 @@ import io.github.ivannavas.local_server_management.repository.HardwareStatusRepo
 import io.github.ivannavas.local_server_management.service.NtfyService;
 import io.github.ivannavas.local_server_management.service.SystemService;
 import io.github.ivannavas.local_server_management.tools.SystemTools;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
+@Slf4j
 public class SystemServiceImpl implements SystemService {
 
     private static final double BASE_THRESHOLD = 65.0;
     private static final double THRESHOLD_STEP = 10.0;
+
+    private static final BigDecimal AGGREGATION_TOLERANCE = BigDecimal.valueOf(3.0);
 
     @Autowired
     private SystemTools systemTools;
@@ -51,6 +62,67 @@ public class SystemServiceImpl implements SystemService {
         hardwareStatusRepository.save(record);
 
         notifyOnTemperatureChange(temperature);
+    }
+
+    @Transactional
+    @Scheduled(cron = "0 0 19 * * *")
+    @EventListener(ApplicationReadyEvent.class)
+    public void aggregatePreviousDay() {
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDate day = LocalDate.now(zone).minusDays(1);
+        OffsetDateTime from = day.atStartOfDay(zone).toOffsetDateTime();
+        OffsetDateTime to = day.plusDays(1).atStartOfDay(zone).toOffsetDateTime();
+
+        List<HardwareStatusRecord> records =
+                hardwareStatusRepository.findByRecordedAtGreaterThanEqualAndRecordedAtLessThanOrderByRecordedAtAsc(from, to);
+        if (records.size() < 2) {
+            return;
+        }
+
+        int removed = 0;
+        List<HardwareStatusRecord> group = new ArrayList<>();
+        BigDecimal groupMin = null;
+        BigDecimal groupMax = null;
+
+        for (HardwareStatusRecord record : records) {
+            BigDecimal temp = record.getCpuTemperature();
+            BigDecimal newMin = group.isEmpty() ? temp : groupMin.min(temp);
+            BigDecimal newMax = group.isEmpty() ? temp : groupMax.max(temp);
+
+            if (group.isEmpty() || newMax.subtract(newMin).compareTo(AGGREGATION_TOLERANCE) <= 0) {
+                group.add(record);
+                groupMin = newMin;
+                groupMax = newMax;
+            } else {
+                removed += collapseGroup(group);
+                group = new ArrayList<>(List.of(record));
+                groupMin = temp;
+                groupMax = temp;
+            }
+        }
+        removed += collapseGroup(group);
+
+        if (removed > 0) {
+            log.info("Aggregated hardware status records for {}: removed {} redundant rows", day, removed);
+        }
+    }
+
+    private int collapseGroup(List<HardwareStatusRecord> group) {
+        if (group.size() < 2) {
+            return 0;
+        }
+
+        BigDecimal sum = BigDecimal.ZERO;
+        for (HardwareStatusRecord record : group) {
+            sum = sum.add(record.getCpuTemperature());
+        }
+        BigDecimal average = sum.divide(BigDecimal.valueOf(group.size()), 2, RoundingMode.HALF_UP);
+        OffsetDateTime earliest = group.getFirst().getRecordedAt();
+
+        hardwareStatusRepository.deleteAll(group);
+        hardwareStatusRepository.save(new HardwareStatusRecord(average, earliest));
+
+        return group.size() - 1;
     }
 
     private void notifyOnTemperatureChange(double temperature) {
