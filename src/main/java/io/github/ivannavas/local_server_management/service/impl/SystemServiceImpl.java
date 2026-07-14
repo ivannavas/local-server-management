@@ -14,13 +14,17 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 
 @Service
 @Slf4j
@@ -30,6 +34,9 @@ public class SystemServiceImpl implements SystemService {
     private static final double THRESHOLD_STEP = 10.0;
 
     private static final BigDecimal AGGREGATION_TOLERANCE = BigDecimal.valueOf(3.0);
+
+    private static final Path THERMAL_BASE = Path.of("/sys/class/thermal");
+    private static final Path DEFAULT_THERMAL_ZONE = THERMAL_BASE.resolve("thermal_zone0");
 
     @Autowired
     private SystemTools systemTools;
@@ -52,9 +59,9 @@ public class SystemServiceImpl implements SystemService {
         return hardwareStatusRepository.findByRecordedAtBetween(from, to);
     }
 
-    @Scheduled(fixedRate = 120_000)
+    @Scheduled(fixedRate = 60_000)
     public void recordCpuTemperature() {
-        double temperature = systemTools.getHardwareStatus().cpuTemperature();
+        double temperature = readCpuTemperature();
         HardwareStatusRecord record = new HardwareStatusRecord(
                 BigDecimal.valueOf(temperature),
                 OffsetDateTime.now()
@@ -62,6 +69,38 @@ public class SystemServiceImpl implements SystemService {
         hardwareStatusRepository.save(record);
 
         notifyOnTemperatureChange(temperature);
+    }
+
+    private double readCpuTemperature() {
+        Path zone = findCpuThermalZone();
+        try {
+            String raw = Files.readString(zone.resolve("temp")).trim();
+            return Long.parseLong(raw) / 1000.0;
+        } catch (IOException | NumberFormatException e) {
+            log.warn("Could not read CPU temperature from sysfs at {}", zone, e);
+            return 0.0;
+        }
+    }
+
+    private Path findCpuThermalZone() {
+        try (Stream<Path> zones = Files.list(THERMAL_BASE)) {
+            return zones
+                    .filter(zone -> zone.getFileName().toString().startsWith("thermal_zone"))
+                    .filter(this::isCpuZone)
+                    .findFirst()
+                    .orElse(DEFAULT_THERMAL_ZONE);
+        } catch (IOException e) {
+            return DEFAULT_THERMAL_ZONE;
+        }
+    }
+
+    private boolean isCpuZone(Path zone) {
+        try {
+            String type = Files.readString(zone.resolve("type")).trim().toLowerCase();
+            return type.contains("x86_pkg_temp") || type.contains("cpu") || type.contains("coretemp");
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     @Transactional
