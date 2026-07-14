@@ -9,6 +9,7 @@ import io.github.ivannavas.local_server_management.service.SystemService;
 import io.github.ivannavas.local_server_management.tools.SystemTools;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -47,7 +48,11 @@ public class SystemServiceImpl implements SystemService {
     private static final Pattern TEMP_INPUT = Pattern.compile("temp\\d+_input");
     private static final Set<String> PACKAGE_LABELS = Set.of("package", "tctl", "tdie");
 
-    private static final Path BOOST_PATH = Path.of("/sys/devices/system/cpu/cpufreq/boost");
+    @Value("${system.boost.read-path:/sys/devices/system/cpu/cpufreq/boost}")
+    private String boostReadPath;
+
+    @Value("${system.boost.write-path:/var/lib/cpu-boost/desired}")
+    private String boostWritePath;
 
     @Autowired
     private SystemTools systemTools;
@@ -92,19 +97,19 @@ public class SystemServiceImpl implements SystemService {
 
     private boolean readBoostEnabled() {
         try {
-            return "1".equals(Files.readString(BOOST_PATH).trim());
+            return "1".equals(Files.readString(Path.of(boostReadPath)).trim());
         } catch (IOException e) {
-            log.warn("Could not read CPU boost state from sysfs at {}", BOOST_PATH, e);
+            log.warn("Could not read CPU boost state from sysfs at {}", boostReadPath, e);
             return false;
         }
     }
 
     private void writeBoostEnabled(boolean enabled) {
         try {
-            Files.writeString(BOOST_PATH, enabled ? "1" : "0");
+            Files.writeString(Path.of(boostWritePath), enabled ? "1" : "0");
         } catch (IOException e) {
             throw new UncheckedIOException(
-                    "Could not write CPU boost state to sysfs at " + BOOST_PATH, e);
+                    "Could not request CPU boost change at " + boostWritePath, e);
         }
     }
 
