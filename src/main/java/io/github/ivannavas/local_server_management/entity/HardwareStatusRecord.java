@@ -20,11 +20,15 @@ public class HardwareStatusRecord {
     @Column(name = "cpu_temperature", precision = 5, scale = 2)
     private BigDecimal cpuTemperature;
 
+    @Column(name = "boost_enabled")
+    private boolean boostEnabled;
+
     @Column(name = "recorded_at")
     private OffsetDateTime recordedAt;
 
-    public HardwareStatusRecord(BigDecimal cpuTemperature, OffsetDateTime recordedAt) {
+    public HardwareStatusRecord(BigDecimal cpuTemperature, boolean boostEnabled, OffsetDateTime recordedAt) {
         this.cpuTemperature = cpuTemperature;
+        this.boostEnabled = boostEnabled;
         this.recordedAt = recordedAt;
     }
 }

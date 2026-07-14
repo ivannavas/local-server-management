@@ -2,6 +2,7 @@ package io.github.ivannavas.local_server_management.service.impl;
 
 import io.github.ivannavas.local_server_management.entity.HardwareStatusRecord;
 import io.github.ivannavas.local_server_management.model.HardwareStatus;
+import io.github.ivannavas.local_server_management.model.HardwareStatusPatchRequest;
 import io.github.ivannavas.local_server_management.repository.HardwareStatusRepository;
 import io.github.ivannavas.local_server_management.service.NtfyService;
 import io.github.ivannavas.local_server_management.service.SystemService;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.file.Files;
@@ -38,6 +40,8 @@ public class SystemServiceImpl implements SystemService {
     private static final Path THERMAL_BASE = Path.of("/sys/class/thermal");
     private static final Path DEFAULT_THERMAL_ZONE = THERMAL_BASE.resolve("thermal_zone0");
 
+    private static final Path BOOST_PATH = Path.of("/sys/devices/system/cpu/cpufreq/boost");
+
     @Autowired
     private SystemTools systemTools;
 
@@ -55,6 +59,13 @@ public class SystemServiceImpl implements SystemService {
     }
 
     @Override
+    public HardwareStatus updateHardwareStatus(HardwareStatusPatchRequest req) {
+        writeBoostEnabled(req.boostEnabled());
+        recordCpuTemperature();
+        return getHardwareStatus();
+    }
+
+    @Override
     public List<HardwareStatusRecord> getHardwareStatusHistory(OffsetDateTime from, OffsetDateTime to) {
         return hardwareStatusRepository.findByRecordedAtBetween(from, to);
     }
@@ -64,11 +75,30 @@ public class SystemServiceImpl implements SystemService {
         double temperature = readCpuTemperature();
         HardwareStatusRecord record = new HardwareStatusRecord(
                 BigDecimal.valueOf(temperature),
+                readBoostEnabled(),
                 OffsetDateTime.now()
         );
         hardwareStatusRepository.save(record);
 
         notifyOnTemperatureChange(temperature);
+    }
+
+    private boolean readBoostEnabled() {
+        try {
+            return "1".equals(Files.readString(BOOST_PATH).trim());
+        } catch (IOException e) {
+            log.warn("Could not read CPU boost state from sysfs at {}", BOOST_PATH, e);
+            return false;
+        }
+    }
+
+    private void writeBoostEnabled(boolean enabled) {
+        try {
+            Files.writeString(BOOST_PATH, enabled ? "1" : "0");
+        } catch (IOException e) {
+            throw new UncheckedIOException(
+                    "Could not write CPU boost state to sysfs at " + BOOST_PATH, e);
+        }
     }
 
     private double readCpuTemperature() {
@@ -156,10 +186,11 @@ public class SystemServiceImpl implements SystemService {
             sum = sum.add(record.getCpuTemperature());
         }
         BigDecimal average = sum.divide(BigDecimal.valueOf(group.size()), 2, RoundingMode.HALF_UP);
-        OffsetDateTime earliest = group.getFirst().getRecordedAt();
+        HardwareStatusRecord earliest = group.getFirst();
 
         hardwareStatusRepository.deleteAll(group);
-        hardwareStatusRepository.save(new HardwareStatusRecord(average, earliest));
+        hardwareStatusRepository.save(
+                new HardwareStatusRecord(average, earliest.isBoostEnabled(), earliest.getRecordedAt()));
 
         return group.size() - 1;
     }

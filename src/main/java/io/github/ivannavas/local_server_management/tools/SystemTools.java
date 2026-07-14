@@ -16,9 +16,10 @@ public class SystemTools {
 
     @Tool(name = "getHardwareStatus", description = "Get the hardware status information")
     public HardwareStatus getHardwareStatus() {
-        double cpuTemperature = hardwareStatusRepository.findTopByOrderByRecordedAtDesc()
-                .map(record -> record.getCpuTemperature().doubleValue())
-                .orElse(0.0);
-        return new HardwareStatus(cpuTemperature);
+        return hardwareStatusRepository.findTopByOrderByRecordedAtDesc()
+                .map(record -> new HardwareStatus(
+                        record.getCpuTemperature().doubleValue(),
+                        record.isBoostEnabled()))
+                .orElse(new HardwareStatus(0.0, false));
     }
 }
