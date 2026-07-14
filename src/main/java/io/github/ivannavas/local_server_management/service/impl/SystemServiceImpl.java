@@ -26,6 +26,8 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 @Service
@@ -37,8 +39,13 @@ public class SystemServiceImpl implements SystemService {
 
     private static final BigDecimal AGGREGATION_TOLERANCE = BigDecimal.valueOf(3.0);
 
+    private static final Path HWMON_BASE = Path.of("/sys/class/hwmon");
     private static final Path THERMAL_BASE = Path.of("/sys/class/thermal");
-    private static final Path DEFAULT_THERMAL_ZONE = THERMAL_BASE.resolve("thermal_zone0");
+
+    private static final Set<String> CPU_HWMON_NAMES =
+            Set.of("coretemp", "k10temp", "zenpower", "cpu_thermal");
+    private static final Pattern TEMP_INPUT = Pattern.compile("temp\\d+_input");
+    private static final Set<String> PACKAGE_LABELS = Set.of("package", "tctl", "tdie");
 
     private static final Path BOOST_PATH = Path.of("/sys/devices/system/cpu/cpufreq/boost");
 
@@ -102,25 +109,93 @@ public class SystemServiceImpl implements SystemService {
     }
 
     private double readCpuTemperature() {
-        Path zone = findCpuThermalZone();
+        Path tempInput = findCpuTempInput();
+        if (tempInput == null) {
+            log.warn("Could not find a CPU temperature sensor in sysfs (hwmon/thermal)");
+            return 0.0;
+        }
         try {
-            String raw = Files.readString(zone.resolve("temp")).trim();
+            String raw = Files.readString(tempInput).trim();
             return Long.parseLong(raw) / 1000.0;
         } catch (IOException | NumberFormatException e) {
-            log.warn("Could not read CPU temperature from sysfs at {}", zone, e);
+            log.warn("Could not read CPU temperature from sysfs at {}", tempInput, e);
             return 0.0;
         }
     }
 
-    private Path findCpuThermalZone() {
+    /**
+     * Locates the CPU temperature input file, preferring the hwmon coretemp/k10temp
+     * driver (available on bare metal such as Proxmox) and falling back to the ACPI
+     * thermal zones.
+     */
+    private Path findCpuTempInput() {
+        Path hwmonInput = findHwmonCpuTempInput();
+        return hwmonInput != null ? hwmonInput : findThermalZoneTempInput();
+    }
+
+    private Path findHwmonCpuTempInput() {
+        if (!Files.isDirectory(HWMON_BASE)) {
+            return null;
+        }
+        try (Stream<Path> hwmons = Files.list(HWMON_BASE)) {
+            return hwmons
+                    .filter(this::isCpuHwmon)
+                    .map(this::preferredTempInput)
+                    .filter(java.util.Objects::nonNull)
+                    .findFirst()
+                    .orElse(null);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private boolean isCpuHwmon(Path hwmon) {
+        try {
+            String name = Files.readString(hwmon.resolve("name")).trim().toLowerCase();
+            return CPU_HWMON_NAMES.contains(name);
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private Path preferredTempInput(Path hwmon) {
+        try (Stream<Path> files = Files.list(hwmon)) {
+            List<Path> inputs = files
+                    .filter(p -> TEMP_INPUT.matcher(p.getFileName().toString()).matches())
+                    .sorted()
+                    .toList();
+            return inputs.stream()
+                    .filter(this::isPackageLabel)
+                    .findFirst()
+                    .orElse(inputs.isEmpty() ? null : inputs.getFirst());
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private boolean isPackageLabel(Path tempInput) {
+        String labelFile = tempInput.getFileName().toString().replace("_input", "_label");
+        try {
+            String label = Files.readString(tempInput.resolveSibling(labelFile)).trim().toLowerCase();
+            return PACKAGE_LABELS.stream().anyMatch(label::contains);
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private Path findThermalZoneTempInput() {
+        if (!Files.isDirectory(THERMAL_BASE)) {
+            return null;
+        }
         try (Stream<Path> zones = Files.list(THERMAL_BASE)) {
             return zones
                     .filter(zone -> zone.getFileName().toString().startsWith("thermal_zone"))
                     .filter(this::isCpuZone)
+                    .map(zone -> zone.resolve("temp"))
                     .findFirst()
-                    .orElse(DEFAULT_THERMAL_ZONE);
+                    .orElse(null);
         } catch (IOException e) {
-            return DEFAULT_THERMAL_ZONE;
+            return null;
         }
     }
 
