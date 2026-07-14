@@ -73,7 +73,12 @@ public class SystemServiceImpl implements SystemService {
     @Override
     public HardwareStatus updateHardwareStatus(HardwareStatusPatchRequest req) {
         writeBoostEnabled(req.boostEnabled());
-        recordCpuTemperature();
+        try {
+            wait(1000);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        recordHardwareStatus();
         return getHardwareStatus();
     }
 
@@ -83,7 +88,7 @@ public class SystemServiceImpl implements SystemService {
     }
 
     @Scheduled(fixedRate = 60_000)
-    public void recordCpuTemperature() {
+    public void recordHardwareStatus() {
         double temperature = readCpuTemperature();
         HardwareStatusRecord record = new HardwareStatusRecord(
                 BigDecimal.valueOf(temperature),
