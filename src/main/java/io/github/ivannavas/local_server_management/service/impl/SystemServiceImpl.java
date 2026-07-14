@@ -74,7 +74,7 @@ public class SystemServiceImpl implements SystemService {
     public HardwareStatus updateHardwareStatus(HardwareStatusPatchRequest req) {
         writeBoostEnabled(req.boostEnabled());
         try {
-            wait(1000);
+            Thread.sleep(1000);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
