@@ -6,20 +6,47 @@ import io.github.ivannavas.sprout.annotation.Tool;
 import io.github.ivannavas.sprout.mcp.annotation.Mcp;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Slf4j
 @Mcp(name = "local-server-management")
 public class SystemTools {
 
+    private static final String DATABASE_SIZE_QUERY =
+            "SELECT datname, pg_database_size(datname) FROM pg_database " +
+                    "WHERE datistemplate = false ORDER BY datname";
+
     @Autowired
     private HardwareStatusRepository hardwareStatusRepository;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @Tool(name = "getHardwareStatus", description = "Get the hardware status information")
     public HardwareStatus getHardwareStatus() {
+        Map<String, Long> databasesSize = getDatabasesSize();
+        long totalSize = databasesSize.values().stream().mapToLong(Long::longValue).sum();
         return hardwareStatusRepository.findTopByOrderByRecordedAtDesc()
                 .map(record -> new HardwareStatus(
                         record.getCpuTemperature().doubleValue(),
-                        record.isBoostEnabled()))
-                .orElse(new HardwareStatus(0.0, false));
+                        record.isBoostEnabled(),
+                        databasesSize,
+                        totalSize))
+                .orElse(new HardwareStatus(0.0, false, databasesSize, totalSize));
+    }
+
+    /**
+     * Returns the on-disk size in bytes of every non-template database on the
+     * PostgreSQL server, keyed by database name.
+     */
+    private Map<String, Long> getDatabasesSize() {
+        Map<String, Long> sizes = new LinkedHashMap<>();
+        jdbcTemplate.query(DATABASE_SIZE_QUERY, rs -> {
+            sizes.put(rs.getString(1), rs.getLong(2));
+        });
+        return sizes;
     }
 }
