@@ -5,7 +5,6 @@ import java.util.Map;
 public record HardwareStatus(
         double cpuTemperature,
         boolean boostEnabled,
-        Map<String, Long> databasesSize,
-        long totalSize
+        Map<String, Long> databasesSize
 ) {
 }

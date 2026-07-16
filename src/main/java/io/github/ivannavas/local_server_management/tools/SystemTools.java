@@ -8,9 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -22,8 +19,6 @@ public class SystemTools {
             "SELECT datname, pg_database_size(datname) FROM pg_database " +
                     "WHERE datistemplate = false ORDER BY datname";
 
-    private static final Path DISK_PATH = Path.of("/");
-
     @Autowired
     private HardwareStatusRepository hardwareStatusRepository;
 
@@ -33,14 +28,12 @@ public class SystemTools {
     @Tool(name = "getHardwareStatus", description = "Get the hardware status information")
     public HardwareStatus getHardwareStatus() {
         Map<String, Long> databasesSize = getDatabasesSize();
-        long totalSize = getTotalDiskSize();
         return hardwareStatusRepository.findTopByOrderByRecordedAtDesc()
                 .map(record -> new HardwareStatus(
                         record.getCpuTemperature().doubleValue(),
                         record.isBoostEnabled(),
-                        databasesSize,
-                        totalSize))
-                .orElse(new HardwareStatus(0.0, false, databasesSize, totalSize));
+                        databasesSize))
+                .orElse(new HardwareStatus(0.0, false, databasesSize));
     }
 
     /**
@@ -53,18 +46,5 @@ public class SystemTools {
             sizes.put(rs.getString(1), rs.getLong(2));
         });
         return sizes;
-    }
-
-    /**
-     * Returns the total capacity in bytes of the disk backing the server's root
-     * filesystem.
-     */
-    private long getTotalDiskSize() {
-        try {
-            return Files.getFileStore(DISK_PATH).getTotalSpace();
-        } catch (IOException e) {
-            log.warn("Could not read total disk size at {}", DISK_PATH, e);
-            return 0L;
-        }
     }
 }
