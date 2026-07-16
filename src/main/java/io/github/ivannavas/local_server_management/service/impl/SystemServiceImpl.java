@@ -7,8 +7,8 @@ import io.github.ivannavas.local_server_management.repository.HardwareStatusRepo
 import io.github.ivannavas.local_server_management.service.NtfyService;
 import io.github.ivannavas.local_server_management.service.SystemService;
 import io.github.ivannavas.local_server_management.tools.SystemTools;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -33,6 +33,7 @@ import java.util.stream.Stream;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class SystemServiceImpl implements SystemService {
 
     private static final double BASE_THRESHOLD = 65.0;
@@ -49,19 +50,16 @@ public class SystemServiceImpl implements SystemService {
     private static final Set<String> PACKAGE_LABELS = Set.of("package", "tctl", "tdie");
 
     @Value("${system.boost.read-path:/sys/devices/system/cpu/cpufreq/boost}")
-    private String boostReadPath;
+    private final String boostReadPath;
 
     @Value("${system.boost.write-path:/var/lib/cpu-boost/desired}")
-    private String boostWritePath;
+    private final String boostWritePath;
 
-    @Autowired
-    private SystemTools systemTools;
+    private final SystemTools systemTools;
 
-    @Autowired
-    private HardwareStatusRepository hardwareStatusRepository;
+    private final HardwareStatusRepository hardwareStatusRepository;
 
-    @Autowired
-    private NtfyService ntfyService;
+    private final NtfyService ntfyService;
 
     private int lastNotifiedLevel = 0;
 

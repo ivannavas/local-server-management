@@ -4,7 +4,7 @@ import io.github.ivannavas.local_server_management.entity.HardwareStatusRecord;
 import io.github.ivannavas.local_server_management.model.HardwareStatus;
 import io.github.ivannavas.local_server_management.model.HardwareStatusPatchRequest;
 import io.github.ivannavas.local_server_management.service.SystemService;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,10 +20,10 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/system")
+@RequiredArgsConstructor
 public class SystemRestController {
 
-    @Autowired
-    private SystemService systemService;
+    private final SystemService systemService;
 
     @GetMapping("/hardware-status")
     public HardwareStatus getHardwareStatus() {

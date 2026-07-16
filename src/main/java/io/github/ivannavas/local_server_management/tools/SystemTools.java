@@ -4,8 +4,8 @@ import io.github.ivannavas.local_server_management.model.HardwareStatus;
 import io.github.ivannavas.local_server_management.repository.HardwareStatusRepository;
 import io.github.ivannavas.sprout.annotation.Tool;
 import io.github.ivannavas.sprout.mcp.annotation.Mcp;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.LinkedHashMap;
@@ -13,17 +13,16 @@ import java.util.Map;
 
 @Slf4j
 @Mcp(name = "local-server-management")
+@RequiredArgsConstructor
 public class SystemTools {
 
     private static final String DATABASE_SIZE_QUERY =
             "SELECT datname, pg_database_size(datname) FROM pg_database " +
                     "WHERE datistemplate = false ORDER BY datname";
 
-    @Autowired
-    private HardwareStatusRepository hardwareStatusRepository;
+    private final HardwareStatusRepository hardwareStatusRepository;
 
-    @Autowired
-    private JdbcTemplate jdbcTemplate;
+    private final JdbcTemplate jdbcTemplate;
 
     @Tool(name = "getHardwareStatus", description = "Get the hardware status information")
     public HardwareStatus getHardwareStatus() {
